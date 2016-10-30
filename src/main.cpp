@@ -16,10 +16,10 @@
 
 // -- Moisture
 #define MOISTURE_SENSOR_PIN 0
-#define MOISTURE_SENSOR_PWR_PIN D7
+#define MOISTURE_SENSOR_PWR_PIN D3
 
 // -- Temperature
-#define TEMPERATURE_SENSOR_PIN D8
+#define TEMPERATURE_SENSOR_PIN D7
 #define TEMPERATURE_SENSOR_TYPE DHT22   // tempSensor 22  (AM2302), AM2321
 
 // Vars
