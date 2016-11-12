@@ -1,5 +1,6 @@
 #include <Homie.h>
-#include <DHT.h>
+#include <string>
+#include <sstream>
 
 #define OUTPUT1 D8 // solenoid 3
 #define OUTPUT2 D7 // solenoid 2
@@ -48,6 +49,7 @@ void waterZone(uint8_t zone, uint32_t milliseconds){
   Serial << "Enabling output " << zone << " for " << milliseconds << endl;
   startPump();
   digitalWrite(zone, HIGH);
+  Serial << "Sleeping for " << milliseconds << "ms" << endl;
   delay(milliseconds);
   Serial << "Disabling output " << zone << " for " << milliseconds << endl;
   digitalWrite(zone, LOW);
@@ -59,28 +61,59 @@ bool zoneOnHandler(const HomieRange& range, const String& value) {
   Serial << range.index << " set to " << value << endl;
   uint8_t output;
 
+  long delayMs = value.toInt();
+
   switch(range.index){
     case 1:
-      Serial << range.index << " pumping" << endl;
+      Serial << range.index << " pumping for " << delayMs << endl;
       output = OUTPUT1;
       break;
     case 2:
-      Serial << range.index << " pumping" << endl;
+      Serial << range.index << " pumping for " << delayMs << endl;
       output = OUTPUT2;
       break;
     case 3:
-      Serial << range.index << " pumping" << endl;
+      Serial << range.index << " pumping for " << delayMs << endl;
       output = OUTPUT3;
       break;
   }
 
-  waterZone(output, 120000);
-  zoneNode.setProperty("irrigating").send("watering");
+  // TODO This section needs to be cleaned up.
+  // listen on devices/c40f46e0/zone/status to get those updates
+  // Report status
+  String statusUpdate = "{";
+  statusUpdate += "event:'zoneOnStart',";
+  statusUpdate += "zone:";
+    statusUpdate += range.index;
+    statusUpdate += ",";
+  statusUpdate += "millis:";
+    statusUpdate += millis();
+    statusUpdate += ",";
+  statusUpdate += "duration:";
+    statusUpdate += delayMs;
+  statusUpdate += "}";
+  zoneNode.setProperty("status").send(statusUpdate);
+
+  waterZone(output, (uint32_t)delayMs);
+
+  statusUpdate = "{";
+  statusUpdate += "event:'zoneOnStop',";
+  statusUpdate += "zone:";
+    statusUpdate += range.index;
+    statusUpdate += ",";
+  statusUpdate += "millis:";
+    statusUpdate += millis();
+    statusUpdate += ",";
+  statusUpdate += "duration:";
+    statusUpdate += delayMs;
+  statusUpdate += "}";
+  zoneNode.setProperty("status").send(statusUpdate);
 
   return true;
 }
 
 void loopHandler(){
+  //TODO This eventually to be used for controlling concurrent watering
   // Not used
 }
 
@@ -92,7 +125,8 @@ void setup() {
   Homie_setBrand("plantnanny")
   Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
 
-  // devices/c40f46e0/zone/on/set
+  // devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
+  // devices/c40f46e0/zone/on_3
   zoneNode.advertiseRange("on", 1, 3).settable(zoneOnHandler);
 
   Homie.setup();
