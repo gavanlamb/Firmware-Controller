@@ -1,120 +1,91 @@
 #include <Homie.h>
 #include <string>
 #include <sstream>
+#include <list>
 
-#define OUTPUT1 D8 // solenoid 3
-#define OUTPUT2 D7 // solenoid 2
-#define OUTPUT3 D6 // solenoid 1
-#define PUMP D5 // pump
+struct RelayRun{
+    uint8_t zone;
+    uint32_t durationMilliseconds;
+    uint32_t endTime;
+};
+
+#define OUTPUT1 D5 // solenoid 1
+#define OUTPUT2 D6 // solenoid 2
+#define OUTPUT3 D7 // solenoid 3
+#define OUTPUT4 D8 // solenoid 4
+
+std::vector<RelayRun> toWater;
 
 HomieNode zoneNode("zone", "switch");
-bool isPumpOn = false;
 
 void resetOutputs(){
-  digitalWrite(PUMP, LOW);
   digitalWrite(OUTPUT1, LOW);
   digitalWrite(OUTPUT2, LOW);
   digitalWrite(OUTPUT3, LOW);
+  digitalWrite(OUTPUT4, LOW);
 }
 
 void setupHandler(){
-  // Setup all outputs
-  pinMode(PUMP, OUTPUT);
   pinMode(OUTPUT1, OUTPUT);
   pinMode(OUTPUT2, OUTPUT);
   pinMode(OUTPUT3, OUTPUT);
+  pinMode(OUTPUT4, OUTPUT);
 
   resetOutputs();
 }
 
-bool startPump(){
-  if(!isPumpOn){
-    Serial << "Starting pump " << endl;
-    isPumpOn = true;
-    digitalWrite(PUMP, HIGH);
+void startRelay(uint8_t zone){
+    Serial << "Enabling output " << zone << endl;
+    digitalWrite(zone, HIGH);
+}
+
+void stopRelay(uint8_t zone){
+    Serial << "Disabling output " << zone << endl;
+    digitalWrite(zone, LOW);
+}
+
+bool addZoneHandler(const HomieRange& range, const String& value) {
+      RelayRun relay;
+      Serial << "Add output to array " << OUTPUT1 << " for " << value.toInt() << endl;
+    switch(range.index){
+        case 1:
+          relay.zone = OUTPUT1;
+          relay.durationMilliseconds = value.toInt();
+          break;
+        case 2:
+          relay.zone = OUTPUT2;
+          relay.durationMilliseconds = value.toInt();
+          break;
+        case 3:
+          relay.zone = OUTPUT3;
+          relay.durationMilliseconds = value.toInt();
+          break;
+        case 4:
+          relay.zone = OUTPUT4;
+          relay.durationMilliseconds = value.toInt();
+          break;
+      }
+
+    toWater.push_back(
+        relay
+    );
     return true;
-  }
-}
-
-bool stopPump(){
-  if(isPumpOn){
-    Serial << "Stopping pump " << endl;
-    isPumpOn = false;
-    digitalWrite(PUMP, LOW);
-    return false;
-  }
-}
-
-void waterZone(uint8_t zone, uint32_t milliseconds){
-  Serial << "Enabling output " << zone << " for " << milliseconds << endl;
-  startPump();
-  digitalWrite(zone, HIGH);
-  Serial << "Sleeping for " << milliseconds << "ms" << endl;
-  delay(milliseconds);
-  Serial << "Disabling output " << zone << " for " << milliseconds << endl;
-  digitalWrite(zone, LOW);
-  stopPump();
-}
-
-bool zoneOnHandler(const HomieRange& range, const String& value) {
-
-  Serial << range.index << " set to " << value << endl;
-  uint8_t output;
-
-  long delayMs = value.toInt();
-
-  switch(range.index){
-    case 1:
-      Serial << range.index << " pumping for " << delayMs << endl;
-      output = OUTPUT1;
-      break;
-    case 2:
-      Serial << range.index << " pumping for " << delayMs << endl;
-      output = OUTPUT2;
-      break;
-    case 3:
-      Serial << range.index << " pumping for " << delayMs << endl;
-      output = OUTPUT3;
-      break;
-  }
-
-  // TODO This section needs to be cleaned up.
-  // listen on devices/c40f46e0/zone/status to get those updates
-  // Report status
-  String statusUpdate = "{";
-  statusUpdate += "event:'zoneOnStart',";
-  statusUpdate += "zone:";
-    statusUpdate += range.index;
-    statusUpdate += ",";
-  statusUpdate += "millis:";
-    statusUpdate += millis();
-    statusUpdate += ",";
-  statusUpdate += "duration:";
-    statusUpdate += delayMs;
-  statusUpdate += "}";
-  zoneNode.setProperty("status").send(statusUpdate);
-
-  waterZone(output, (uint32_t)delayMs);
-
-  statusUpdate = "{";
-  statusUpdate += "event:'zoneOnStop',";
-  statusUpdate += "zone:";
-    statusUpdate += range.index;
-    statusUpdate += ",";
-  statusUpdate += "millis:";
-    statusUpdate += millis();
-    statusUpdate += ",";
-  statusUpdate += "duration:";
-    statusUpdate += delayMs;
-  statusUpdate += "}";
-  zoneNode.setProperty("status").send(statusUpdate);
-
-  return true;
 }
 
 void loopHandler(){
-  //TODO This eventually to be used for controlling concurrent watering
-  // Not used
+    Serial << "ARRAY SIZE: " << toWater.size() << endl;
+    for (RelayRun r : toWater){
+        Serial << "Looping through array " << r.zone << endl;
+        if(r.endTime == 0){
+            r.endTime = millis() + r.durationMilliseconds;
+            startRelay(r.zone);
+            Serial << "Starting " << r.zone << " this will end " << r.endTime << endl;
+        }else{
+            if(millis() > r.endTime){
+                stopRelay(r.zone);
+            }
+        }
+    }
 }
 
 void setup() {
@@ -127,7 +98,7 @@ void setup() {
 
   // devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
   // devices/c40f46e0/zone/on_3
-  zoneNode.advertiseRange("on", 1, 3).settable(zoneOnHandler);
+  zoneNode.advertiseRange("on", 1, 4).settable(addZoneHandler);
 
   Homie.setup();
 }
