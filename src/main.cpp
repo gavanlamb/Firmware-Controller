@@ -34,64 +34,53 @@ void setupHandler(){
 }
 
 bool startRelay(uint8_t zone){
-    //Serial << "Enabling RELAY " << zone << endl;
     digitalWrite(zone, HIGH);
     return true;
 }
 
 bool stopRelay(uint8_t zone){
-    //Serial << "Disabling RELAY " << zone << endl;
     digitalWrite(zone, LOW);
     return true;
 }
 
 bool addZoneHandler(const HomieRange& range, const String& value) {
     RelayControll relay;
+
     switch(range.index){
         case 1:
           relay.zone = RELAY1;
           relay.duration = value.toInt();
           relay.endTime = 0;
-          //Serial << "Add RELAY to array: " << relay.zone << " for " << relay.durationMilliseconds << endl;
           break;
         case 2:
           relay.zone = RELAY2;
           relay.duration = value.toInt();
           relay.endTime = 0;
-          //Serial << "Add RELAY to array: " << relay.zone << " for " << relay.durationMilliseconds << endl;
           break;
         case 3:
           relay.zone = RELAY3;
           relay.duration = value.toInt();
           relay.endTime = 0;
-          //Serial << "Add RELAY to array: " << relay.zone << " for " << relay.durationMilliseconds << endl;
           break;
         case 4:
           relay.zone = RELAY4;
           relay.duration = value.toInt();
           relay.endTime = 0;
-          //Serial << "Add RELAY to array: " << relay.zone << " for " << relay.durationMilliseconds << endl;
           break;
       }
 
     relaysToControll.push_back(
         relay
     );
-    //Serial << "Array size " << relaysToControll.size() << endl;
+    
     return true;
 }
 
 void loopHandler(){
-    //Serial << "ARRAY SIZE: " << relaysToControll.size() << endl;
     for (int i = 0; i < relaysToControll.size(); i++){
-        /*Serial << "Looping through array---Looping through array---Looping through array " << endl;
-        Serial << "Zone: " << relaysToControll[i].zone << endl;
-        Serial << "Endtime: " << relaysToControll[i].endTime << endl;
-        Serial << "Duration: " << relaysToControll[i].durationMilliseconds << endl;*/
         if(relaysToControll[i].endTime == 0){
             relaysToControll[i].endTime = millis() + relaysToControll[i].duration;
             startRelay(relaysToControll[i].zone);
-            // Serial << "Starting " << relaysToControll[i].zone << " this will end " << relaysToControll[i].endTime << endl;
         }else{
             if(millis() > relaysToControll[i].endTime){
                 stopRelay(relaysToControll[i].zone);
