@@ -33,14 +33,12 @@ void setupHandler(){
     resetRelays();
 }
 
-bool startRelay(uint8_t zone){
+void startRelay(uint8_t zone){
     digitalWrite(zone, HIGH);
-    return true;
 }
 
-bool stopRelay(uint8_t zone){
+void stopRelay(uint8_t zone){
     digitalWrite(zone, LOW);
-    return true;
 }
 
 bool addZoneHandler(const HomieRange& range, const String& value) {
@@ -72,7 +70,7 @@ bool addZoneHandler(const HomieRange& range, const String& value) {
     relaysToControll.push_back(
         relay
     );
-    
+
     return true;
 }
 
