@@ -42,6 +42,7 @@ void stopRelay(uint8_t zone){
 }
 
 bool addZoneHandler(const HomieRange& range, const String& value) {
+
     RelayControll relay;
 
     switch(range.index){
