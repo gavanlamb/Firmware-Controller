@@ -1,10 +1,10 @@
 #include <Homie.h>
 #include <string>
 #include <sstream>
-#include <vector>
+#include <map>
+
 
 struct RelayControll{
-    uint8_t zone;
     uint32_t duration;
     uint32_t endTime;
 };
@@ -14,7 +14,8 @@ struct RelayControll{
 #define RELAY3 D7 // solenoid 3
 #define RELAY4 D8 // solenoid 4
 
-std::vector<RelayControll> relaysToControll;
+//std::vector<RelayControll> relaysToControll;
+std::map<uint8_t, RelayControll> relaysToControll;
 
 HomieNode zoneNode("zone", "switch");
 
@@ -33,61 +34,85 @@ void setupHandler(){
     resetRelays();
 }
 
-void startRelay(uint8_t zone){
+void RelayOn(uint8_t zone){
     digitalWrite(zone, HIGH);
 }
 
-void stopRelay(uint8_t zone){
+void RelayOff(uint8_t zone){
     digitalWrite(zone, LOW);
 }
 
-bool addZoneHandler(const HomieRange& range, const String& value) {
+void RelaysOn(){}
 
+uint8_t GetZone(uint8_t index){
+
+  uint8_t pin = 0;
+
+  switch(index){
+      case 1:
+        pin = RELAY1;
+        break;
+      case 2:
+        pin = RELAY2;
+        break;
+      case 3:
+        pin = RELAY3;
+        break;
+      case 4:
+        pin = RELAY4;
+        break;
+    }
+    return pin;
+}
+
+bool ZoneTimedOnHandler(const HomieRange& range, const String& value) {
     RelayControll relay;
 
-    switch(range.index){
-        case 1:
-          relay.zone = RELAY1;
-          relay.duration = value.toInt();
-          relay.endTime = 0;
-          break;
-        case 2:
-          relay.zone = RELAY2;
-          relay.duration = value.toInt();
-          relay.endTime = 0;
-          break;
-        case 3:
-          relay.zone = RELAY3;
-          relay.duration = value.toInt();
-          relay.endTime = 0;
-          break;
-        case 4:
-          relay.zone = RELAY4;
-          relay.duration = value.toInt();
-          relay.endTime = 0;
-          break;
-      }
+    relay.duration = value.toInt();
+    relay.endTime = 0;
 
-    relaysToControll.push_back(
-        relay
-    );
+    relaysToControll.insert(std::pair<uint8_t, RelayControll>(GetZone(range.index),relay));
 
     return true;
 }
 
+bool ZoneOnHandler(const HomieRange& range, const String& value) {
+    RelayControll relay;
+    //if range is not between expected then don't do a thing
+    relay.duration = value.toInt();
+    relay.endTime = 0;
+
+    //relaysToControll.push_back(
+    //    relay
+    //);
+    return true;
+}
+
+bool ZoneOffHandler(const HomieRange& range, const String& value) {
+    RelayControll relay;
+    //if range is not between expected then don't do a thing
+    relay.duration = value.toInt();
+    relay.endTime = 0;
+
+    //relaysToControll.push_back(
+    //    relay
+    //);
+    return true;
+}
+
 void loopHandler(){
-    for (int i = 0; i < relaysToControll.size(); i++){
-        if(relaysToControll[i].endTime == 0){
-            relaysToControll[i].endTime = millis() + relaysToControll[i].duration;
-            startRelay(relaysToControll[i].zone);
-        }else{
-            if(millis() > relaysToControll[i].endTime){
-                stopRelay(relaysToControll[i].zone);
-                relaysToControll.erase(relaysToControll.begin()+i);
-                i = 0;//seems cheaper than a calculation to check if there are anymore a head, whether it is on zero or not etc - prevent out of issues.
-            }
-        }
-    }
+    //for (int i = 0; i < relaysToControll.size(); i++){
+    //    if(relaysToControll[i].endTime == 0){
+    //        relaysToControll[i].endTime = millis() + relaysToControll[i].duration;
+    //        RelayOn(relaysToControll[i].zone);
+    //    }else{
+    //        if(millis() > relaysToControll[i].endTime){
+    //            RelayOff(relaysToControll[i].zone);
+    //            relaysToControll.erase(relaysToControll.begin()+i);
+    //            i = 0;//seems cheaper than a calculation to check if there are anymore a head, whether it is on zero or not etc - prevent out of issues.
+    //        }
+    //    }
+    //}
 }
 
 void setup() {
@@ -100,7 +125,9 @@ void setup() {
 
   // devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
   // devices/c40f46e0/zone/on_3
-  zoneNode.advertiseRange("on", 1, 4).settable(addZoneHandler);
+  zoneNode.advertiseRange("timed", 1, 4).settable(ZoneOnHandler);
+  zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
+  zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
 
   Homie.setup();
 }
