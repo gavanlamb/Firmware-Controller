@@ -1,137 +1,201 @@
 #include <Homie.h>
+#include <EEPROM.h>
 #include <string>
 #include <sstream>
 #include <map>
+#include <arduinojson.h>
 
-
-struct RelayControll{
+struct ZoneControll{
     uint32_t duration;
+    uint32_t startTime;
     uint32_t endTime;
 };
 
-#define RELAY1 D5 // solenoid 1
-#define RELAY2 D6 // solenoid 2
-#define RELAY3 D7 // solenoid 3
-#define RELAY4 D8 // solenoid 4
+#define ZONE1 D5
+#define ZONE2 D6
+#define ZONE3 D7
+#define ZONE4 D8
 
-//std::vector<RelayControll> relaysToControll;
-std::map<uint8_t, RelayControll> relaysToControll;
-
+std::map<uint8_t, ZoneControll> zonesToControll;
+uint8_t EepromCounter = 0;
 HomieNode zoneNode("zone", "switch");
 
-void resetRelays(){
-    digitalWrite(RELAY1, LOW);
-    digitalWrite(RELAY2, LOW);
-    digitalWrite(RELAY3, LOW);
-    digitalWrite(RELAY4, LOW);
+void resetZone(){
+    digitalWrite(ZONE1, LOW);
+    digitalWrite(ZONE2, LOW);
+    digitalWrite(ZONE3, LOW);
+    digitalWrite(ZONE4, LOW);
 }
 
 void setupHandler(){
-    pinMode(RELAY1, OUTPUT);
-    pinMode(RELAY2, OUTPUT);
-    pinMode(RELAY3, OUTPUT);
-    pinMode(RELAY4, OUTPUT);
-    resetRelays();
+    pinMode(ZONE1, OUTPUT);
+    pinMode(ZONE2, OUTPUT);
+    pinMode(ZONE3, OUTPUT);
+    pinMode(ZONE4, OUTPUT);
+    resetZone();
 }
 
-void RelayOn(uint8_t zone){
-    digitalWrite(zone, HIGH);
+void ZoneOn(std::map<uint8_t, ZoneControll>::iterator &zoneToControll){
+    digitalWrite(zoneToControll->first, HIGH);
+
+    Serial << "ZoneOn: " << zoneToControll->first << endl;
+
+    StaticJsonBuffer<200> jsonBuffer;
+
+    String statusUpdate = "{";
+        statusUpdate += "event:'ZoneOn',";
+        statusUpdate += "zone:" + zoneToControll->first + ',';
+        statusUpdate += "duration: " + zoneToControll->second.duration + ',';
+        statusUpdate += "startTime:" + zoneToControll->second.startTime + ',';
+        statusUpdate += "expectedEndTime:" + zoneToControll->second.endTime + ',';
+    statusUpdate += "}";
+
+    zoneNode.setProperty("status").send(statusUpdate);
 }
 
-void RelayOff(uint8_t zone){
-    digitalWrite(zone, LOW);
+void ZoneOff(std::map<uint8_t, ZoneControll>::iterator &zoneToControll){
+    digitalWrite(zoneToControll->first, LOW);
+
+    Serial << "ZoneOff: " << zoneToControll->first << endl;
+
+    String statusUpdate = "{";
+        statusUpdate += "event:'ZoneOff',";
+        statusUpdate += "zone:" + zoneToControll->first + ',';
+        statusUpdate += "duration: " + zoneToControll->second.duration + ',';
+        statusUpdate += "startTime:" + zoneToControll->second.startTime + ',';
+        statusUpdate += "endTime:" + zoneToControll->second.endTime + ',';
+    statusUpdate += "}";
+
+    zoneNode.setProperty("status").send(statusUpdate);
 }
 
-void RelaysOn(){}
-
-uint8_t GetZone(uint8_t index){
-
-  uint8_t pin = 0;
-
-  switch(index){
-      case 1:
-        pin = RELAY1;
-        break;
-      case 2:
-        pin = RELAY2;
-        break;
-      case 3:
-        pin = RELAY3;
-        break;
-      case 4:
-        pin = RELAY4;
-        break;
+uint8_t GetZone(uint8_t zone){
+    switch(zone){
+        case 1:
+            return ZONE1;
+        case 2:
+            return ZONE2;
+        case 3:
+            return ZONE3;
+        case 4:
+            return ZONE4;
     }
-    return pin;
 }
 
-bool ZoneTimedOnHandler(const HomieRange& range, const String& value) {
-    RelayControll relay;
-
-    relay.duration = value.toInt();
-    relay.endTime = 0;
-
-    relaysToControll.insert(std::pair<uint8_t, RelayControll>(GetZone(range.index),relay));
-
-    return true;
+template <class T> int EEPROM_writeAnything(int ee, const T& value){
+    const byte* p = (const byte*)(const void*)&value;
+    unsigned int i;
+    for (i = 0; i < sizeof(value); i++)
+          EEPROM.write(ee++, *p++);
+    return i;
 }
 
+template <class T> int EEPROM_readAnything(int ee, T& value){
+    byte* p = (byte*)(void*)&value;
+    unsigned int i;
+    for (i = 0; i < sizeof(value); i++)
+          *p++ = EEPROM.read(ee++);
+    return i;
+}
+
+void WriteToEeprom(){
+    for(std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.begin(); zoneToControll != zonesToControll.end(); ++zoneToControll){
+        uint8_t zone = zoneToControll->first;
+        uint32_t remainingTime = zoneToControll->second.endTime - millis();
+        EEPROM_writeAnything(zone, zone);
+        EEPROM_writeAnything(zone+1, remainingTime);
+    }
+}
+
+void ReadEeprom(){
+    //uint8_t zone = EEPROM_readAnything();
+    //int32_t remainingTime = zoneToControll->second.endTime - millis();
+}
+
+///Handlers
+//Adds zone onto list to run for x amount of time or all the time
 bool ZoneOnHandler(const HomieRange& range, const String& value) {
-    RelayControll relay;
-    //if range is not between expected then don't do a thing
+    ZoneControll relay;
     relay.duration = value.toInt();
+    relay.startTime = 0;
     relay.endTime = 0;
 
-    //relaysToControll.push_back(
-    //    relay
-    //);
+    auto zone = GetZone(range.index);
+
+    zonesToControll.insert(std::pair<uint8_t, ZoneControll>(zone, relay));
+
+    Serial << "ZoneOnHandler: " << zone << " " << endl;
+
+    WriteToEeprom();
+
     return true;
 }
 
+//Deals with off commands, sets the end time to the current amount of millis
 bool ZoneOffHandler(const HomieRange& range, const String& value) {
-    RelayControll relay;
-    //if range is not between expected then don't do a thing
-    relay.duration = value.toInt();
-    relay.endTime = 0;
 
-    //relaysToControll.push_back(
-    //    relay
-    //);
+    auto zone = GetZone(range.index);
+
+    std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.find(zone);
+
+    if (zoneToControll != zonesToControll.end()){
+        zoneToControll->second.endTime = millis();
+        Serial << "ZoneOffHandler: " << zone << endl;
+    }
+
+    WriteToEeprom();
+
     return true;
 }
 
+//handler for the loop item
 void loopHandler(){
-    //for (int i = 0; i < relaysToControll.size(); i++){
-    //    if(relaysToControll[i].endTime == 0){
-    //        relaysToControll[i].endTime = millis() + relaysToControll[i].duration;
-    //        RelayOn(relaysToControll[i].zone);
-    //    }else{
-    //        if(millis() > relaysToControll[i].endTime){
-    //            RelayOff(relaysToControll[i].zone);
-    //            relaysToControll.erase(relaysToControll.begin()+i);
-    //            i = 0;//seems cheaper than a calculation to check if there are anymore a head, whether it is on zero or not etc - prevent out of issues.
-    //        }
-    //    }
-    //}
+    for (std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.begin(); zoneToControll != zonesToControll.end(); ++zoneToControll){
+        if(zoneToControll->second.endTime == 0) {
+            if(zoneToControll->second.startTime == 0){
+                zoneToControll->second.startTime = millis();
+                ZoneOn(zoneToControll);
+            }
+            zoneToControll->second.endTime = zoneToControll->second.startTime + zoneToControll->second.duration;
+        }else if(zoneToControll->second.startTime != zoneToControll->second.endTime && millis() > zoneToControll->second.endTime)
+        {
+            ZoneOff(zoneToControll);
+            zonesToControll.erase(zoneToControll);
+        }
+    }
+
+    EepromCounter++;
+
+    if(EepromCounter == 300){
+        EepromCounter = 0;
+        WriteToEeprom();
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  Serial << endl << endl;
+  	Serial.begin(115200);
+  	Serial << endl << endl;
 
-  Homie_setFirmware("plantnanny-pumpcontroller", "0.0.1");
-  Homie_setBrand("plantnanny")
-  Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
+  	Homie_setFirmware("plantnanny-pumpcontroller", "0.0.9");
+  	Homie_setBrand("plantnanny")
+  	Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
 
-  // devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
-  // devices/c40f46e0/zone/on_3
-  zoneNode.advertiseRange("timed", 1, 4).settable(ZoneOnHandler);
-  zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
-  zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
+  	// devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
+  	zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
 
-  Homie.setup();
+    // devices/c40f46e0/zone/off_3/set - for sending to 3rd relay
+  	zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
+
+    ReadEeprom();
+
+  	Homie.setup();
+
+  	String statusUpdate = "{";
+  		  statusUpdate += "event:'setup'";
+  	statusUpdate += "}";
+  	zoneNode.setProperty("status").send(statusUpdate);
 }
 
 void loop() {
-  Homie.loop();
+    Homie.loop();
 }
