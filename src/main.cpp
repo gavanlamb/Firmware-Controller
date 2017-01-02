@@ -1,201 +1,195 @@
 #include <Homie.h>
-#include <EEPROM.h>
-#include <string>
-#include <sstream>
-#include <map>
-#include <arduinojson.h>
+#include <ZoneControl.h>
+#include <ZoneOverride.h>
 
-struct ZoneControll{
-    uint32_t duration;
-    uint32_t startTime;
-    uint32_t endTime;
-};
+#define OVERRIDE D4
 
 #define ZONE1 D5
 #define ZONE2 D6
 #define ZONE3 D7
 #define ZONE4 D8
 
-std::map<uint8_t, ZoneControll> zonesToControll;
-uint8_t EepromCounter = 0;
+
+//Globals and definitions
+//GLobal array of zones to control
+static const uint8_t MAXZONESTOCONTROLL = 4;
+//objects to control
+ZoneControl * ptrZonesToControl; //array of pointers
+ZoneControl emptyZoneControl; //empty zone
+//object for override
+ZoneOverride zoneOverride;
+
+//Set this home node to a zone node
 HomieNode zoneNode("zone", "switch");
 
-void resetZone(){
-    digitalWrite(ZONE1, LOW);
-    digitalWrite(ZONE2, LOW);
-    digitalWrite(ZONE3, LOW);
-    digitalWrite(ZONE4, LOW);
+//Zone functions
+//Reset all zones to LOW(OFF)
+void resetZone() {
+	digitalWrite(OVERRIDE, LOW);
+	digitalWrite(ZONE1, LOW);
+	digitalWrite(ZONE2, LOW);
+	digitalWrite(ZONE3, LOW);
+	digitalWrite(ZONE4, LOW);
 }
+//setup all zones as outputs and reset.
+void setupHandler() {
+  pinMode(OVERRIDE, INPUT_PULLUP);
+	pinMode(ZONE1, OUTPUT);
+	pinMode(ZONE2, OUTPUT);
+	pinMode(ZONE3, OUTPUT);
+	pinMode(ZONE4, OUTPUT);
 
-void setupHandler(){
-    pinMode(ZONE1, OUTPUT);
-    pinMode(ZONE2, OUTPUT);
-    pinMode(ZONE3, OUTPUT);
-    pinMode(ZONE4, OUTPUT);
-    resetZone();
+  ptrZonesToControl = new ZoneControl[MAXZONESTOCONTROLL];
+
+	emptyZoneControl.zone = 0;
+	emptyZoneControl.duration = 0;
+	emptyZoneControl.startTime = 0;
+	emptyZoneControl.endTime = 0;
+
+	for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+		ptrZonesToControl[i] = emptyZoneControl;
+	}
+
+  zoneOverride.overridePin = OVERRIDE;
+  zoneOverride.lastRead = 0;
+  zoneOverride.readInterval = 1000;
+
+	resetZone();
 }
-
-void ZoneOn(std::map<uint8_t, ZoneControll>::iterator &zoneToControll){
-    digitalWrite(zoneToControll->first, HIGH);
-
-    Serial << "ZoneOn: " << zoneToControll->first << endl;
-
-    StaticJsonBuffer<200> jsonBuffer;
-
-    String statusUpdate = "{";
-        statusUpdate += "event:'ZoneOn',";
-        statusUpdate += "zone:" + zoneToControll->first + ',';
-        statusUpdate += "duration: " + zoneToControll->second.duration + ',';
-        statusUpdate += "startTime:" + zoneToControll->second.startTime + ',';
-        statusUpdate += "expectedEndTime:" + zoneToControll->second.endTime + ',';
-    statusUpdate += "}";
-
-    zoneNode.setProperty("status").send(statusUpdate);
+//Get the corresponding zone pin
+uint8_t getZonePin(uint16_t zone){
+  switch (zone) {
+		case 1:
+			return ZONE1;
+		case 2:
+			return ZONE2;
+		case 3:
+			return ZONE3;
+		case 4:
+			return ZONE4;
+		default:
+			return 0;
+	}
 }
+//check to see if zone is being controlled
+bool isZoneBeingControlled(uint8_t zone){
+  bool isZoneBeingControlled = false;
 
-void ZoneOff(std::map<uint8_t, ZoneControll>::iterator &zoneToControll){
-    digitalWrite(zoneToControll->first, LOW);
-
-    Serial << "ZoneOff: " << zoneToControll->first << endl;
-
-    String statusUpdate = "{";
-        statusUpdate += "event:'ZoneOff',";
-        statusUpdate += "zone:" + zoneToControll->first + ',';
-        statusUpdate += "duration: " + zoneToControll->second.duration + ',';
-        statusUpdate += "startTime:" + zoneToControll->second.startTime + ',';
-        statusUpdate += "endTime:" + zoneToControll->second.endTime + ',';
-    statusUpdate += "}";
-
-    zoneNode.setProperty("status").send(statusUpdate);
-}
-
-uint8_t GetZone(uint8_t zone){
-    switch(zone){
-        case 1:
-            return ZONE1;
-        case 2:
-            return ZONE2;
-        case 3:
-            return ZONE3;
-        case 4:
-            return ZONE4;
+  for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
+    if (ptrZonesToControl[i].zone == zone) {
+      isZoneBeingControlled = true;
+      break;
     }
+  }
+
+  return isZoneBeingControlled;
+}
+//write to SPIFFS
+void saveToSpiffs(){
+
 }
 
-template <class T> int EEPROM_writeAnything(int ee, const T& value){
-    const byte* p = (const byte*)(const void*)&value;
-    unsigned int i;
-    for (i = 0; i < sizeof(value); i++)
-          EEPROM.write(ee++, *p++);
-    return i;
+//Zone control Functions
+//Turn a particular zone on
+void ZoneOn(ZoneControl *zoneToControl) {
+	digitalWrite(zoneToControl->zone, HIGH);
 }
+//Turn a particular zone off
+void ZoneOff(ZoneControl *zoneToControl) {
+	digitalWrite(zoneToControl->zone, LOW);
 
-template <class T> int EEPROM_readAnything(int ee, T& value){
-    byte* p = (byte*)(void*)&value;
-    unsigned int i;
-    for (i = 0; i < sizeof(value); i++)
-          *p++ = EEPROM.read(ee++);
-    return i;
+  *zoneToControl = emptyZoneControl;
 }
-
-void WriteToEeprom(){
-    for(std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.begin(); zoneToControll != zonesToControll.end(); ++zoneToControll){
-        uint8_t zone = zoneToControll->first;
-        uint32_t remainingTime = zoneToControll->second.endTime - millis();
-        EEPROM_writeAnything(zone, zone);
-        EEPROM_writeAnything(zone+1, remainingTime);
+//Turn all zones off
+void AllZonesOff(){
+  for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+		if (ptrZonesToControl[i].zone != 0) {
+      ZoneOff(&ptrZonesToControl[i]);
     }
+	}
 }
 
-void ReadEeprom(){
-    //uint8_t zone = EEPROM_readAnything();
-    //int32_t remainingTime = zoneToControll->second.endTime - millis();
-}
-
-///Handlers
+//Handlers
 //Adds zone onto list to run for x amount of time or all the time
 bool ZoneOnHandler(const HomieRange& range, const String& value) {
-    ZoneControll relay;
-    relay.duration = value.toInt();
-    relay.startTime = 0;
-    relay.endTime = 0;
+	uint8_t zone = getZonePin(range.index);
 
-    auto zone = GetZone(range.index);
+	ZoneControl zoneToControl;
+		zoneToControl.zone = zone;
+		zoneToControl.duration = value.toInt();
+		zoneToControl.startTime = 0;
+		zoneToControl.endTime = 0;
 
-    zonesToControll.insert(std::pair<uint8_t, ZoneControll>(zone, relay));
+  bool zoneUnderControlled = isZoneBeingControlled(zone);
 
-    Serial << "ZoneOnHandler: " << zone << " " << endl;
-
-    WriteToEeprom();
-
-    return true;
+  if(!zoneUnderControlled){
+  	for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
+  		if (ptrZonesToControl[i].zone == 0) {
+  			ptrZonesToControl[i] = zoneToControl;
+  			break;
+  		}
+  	}
+  }
+	return !zoneUnderControlled;
 }
-
 //Deals with off commands, sets the end time to the current amount of millis
 bool ZoneOffHandler(const HomieRange& range, const String& value) {
-
-    auto zone = GetZone(range.index);
-
-    std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.find(zone);
-
-    if (zoneToControll != zonesToControll.end()){
-        zoneToControll->second.endTime = millis();
-        Serial << "ZoneOffHandler: " << zone << endl;
-    }
-
-    WriteToEeprom();
-
-    return true;
-}
-
-//handler for the loop item
-void loopHandler(){
-    for (std::map<uint8_t, ZoneControll>::iterator zoneToControll = zonesToControll.begin(); zoneToControll != zonesToControll.end(); ++zoneToControll){
-        if(zoneToControll->second.endTime == 0) {
-            if(zoneToControll->second.startTime == 0){
-                zoneToControll->second.startTime = millis();
-                ZoneOn(zoneToControll);
+    uint8_t zone = getZonePin(range.index);
+    bool zoneUnderControlled = isZoneBeingControlled(zone);
+    if (zoneUnderControlled){
+        for(int i=0; i < MAXZONESTOCONTROLL; i++){
+            if(ptrZonesToControl[i].zone == zone){
+                ptrZonesToControl[i].endTime = millis();
+                break;
             }
-            zoneToControll->second.endTime = zoneToControll->second.startTime + zoneToControll->second.duration;
-        }else if(zoneToControll->second.startTime != zoneToControll->second.endTime && millis() > zoneToControll->second.endTime)
-        {
-            ZoneOff(zoneToControll);
-            zonesToControll.erase(zoneToControll);
         }
     }
+    return zoneUnderControlled;
+}
+//handler for the loop item
+void loopHandler() {
+	uint32_t currentMillis = millis();
 
-    EepromCounter++;
-
-    if(EepromCounter == 300){
-        EepromCounter = 0;
-        WriteToEeprom();
+  if(zoneOverride.lastRead + zoneOverride.readInterval < currentMillis){
+		zoneOverride.lastRead = currentMillis;
+		int readOverride = digitalRead(zoneOverride.overridePin);
+		Serial << "Override value: " << readOverride << endl;
+    if(readOverride == HIGH){
+      AllZonesOff();
     }
+  }
+	for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+		if (ptrZonesToControl[i].zone != 0) {
+			if (ptrZonesToControl[i].endTime == 0) {
+				if (ptrZonesToControl[i].startTime == 0) {
+					ptrZonesToControl[i].startTime = currentMillis;
+					ZoneOn(&ptrZonesToControl[i]);
+				}
+				ptrZonesToControl[i].endTime = ptrZonesToControl[i].startTime + ptrZonesToControl[i].duration;
+			}
+      else if(ptrZonesToControl[i].startTime != ptrZonesToControl[i].endTime && currentMillis > ptrZonesToControl[i].endTime){
+          ZoneOff(&ptrZonesToControl[i]);
+      }
+		}
+	}
 }
 
 void setup() {
-  	Serial.begin(115200);
-  	Serial << endl << endl;
+	Serial.begin(115200);
+	Serial << endl << endl;
 
-  	Homie_setFirmware("plantnanny-pumpcontroller", "0.0.9");
-  	Homie_setBrand("plantnanny")
-  	Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
+	Homie_setFirmware("plantnanny-controller", "0.0.9");
+	Homie_setBrand("plantnanny")
 
-  	// devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
-  	zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
+	Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
 
-    // devices/c40f46e0/zone/off_3/set - for sending to 3rd relay
-  	zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
+	// devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
+	zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
+	zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
 
-    ReadEeprom();
-
-  	Homie.setup();
-
-  	String statusUpdate = "{";
-  		  statusUpdate += "event:'setup'";
-  	statusUpdate += "}";
-  	zoneNode.setProperty("status").send(statusUpdate);
+	Homie.setup();
 }
 
 void loop() {
-    Homie.loop();
+	Homie.loop();
 }

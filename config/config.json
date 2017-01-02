@@ -5,12 +5,12 @@
     "password": "***REMOVED***"
   },
   "mqtt": {
-    "host": "192.168.1.159",
+    "host": "***REMOVED***",
     "port": 1883,
     "base_topic": "devices/",
-    "auth": false,
-    "username": "",
-    "password": ""
+    "auth": true,
+    "username": "***REMOVED***",
+    "password": "***REMOVED***"
   },
   "ota": {
     "enabled": true
