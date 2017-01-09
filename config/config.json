@@ -13,6 +13,6 @@
     "password": "***REMOVED***"
   },
   "ota": {
-    "enabled": true
+    "enabled": false
   }
 }

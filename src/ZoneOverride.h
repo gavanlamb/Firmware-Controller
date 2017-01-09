@@ -5,7 +5,8 @@
 
 struct ZoneOverride{
     uint8_t overridePin;
-    uint32_t lastRead;
+    bool isLow;
+    uint32_t lastLowReadTime;
     uint32_t readInterval;
 };
 

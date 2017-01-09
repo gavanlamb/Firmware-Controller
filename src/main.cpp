@@ -9,13 +9,14 @@
 #define ZONE3 D7
 #define ZONE4 D8
 
-
 //Globals and definitions
 //GLobal array of zones to control
 static const uint8_t MAXZONESTOCONTROLL = 4;
 //objects to control
-ZoneControl * ptrZonesToControl; //array of pointers
-ZoneControl emptyZoneControl; //empty zone
+//array of pointers
+ZoneControl * ptrZonesToControl;
+//empty zone
+ZoneControl emptyZoneControl;
 //object for override
 ZoneOverride zoneOverride;
 
@@ -25,117 +26,146 @@ HomieNode zoneNode("zone", "switch");
 //Zone functions
 //Reset all zones to LOW(OFF)
 void resetZone() {
-	digitalWrite(OVERRIDE, LOW);
-	digitalWrite(ZONE1, LOW);
-	digitalWrite(ZONE2, LOW);
-	digitalWrite(ZONE3, LOW);
-	digitalWrite(ZONE4, LOW);
+		String statusUpdate = "{";
+				statusUpdate += "event:'resetZone'";
+		statusUpdate += "}";
+		zoneNode.setProperty("status").send(statusUpdate);
+
+		digitalWrite(OVERRIDE, LOW);
+		digitalWrite(ZONE1, LOW);
+		digitalWrite(ZONE2, LOW);
+		digitalWrite(ZONE3, LOW);
+		digitalWrite(ZONE4, LOW);
 }
 //setup all zones as outputs and reset.
 void setupHandler() {
-  pinMode(OVERRIDE, INPUT_PULLUP);
-	pinMode(ZONE1, OUTPUT);
-	pinMode(ZONE2, OUTPUT);
-	pinMode(ZONE3, OUTPUT);
-	pinMode(ZONE4, OUTPUT);
+		String statusUpdate = "{";
+        statusUpdate += "event:'setupHandler',";
+    statusUpdate += "}";
+    zoneNode.setProperty("status").send(statusUpdate);
 
-  ptrZonesToControl = new ZoneControl[MAXZONESTOCONTROLL];
+	  pinMode(OVERRIDE, INPUT_PULLUP);
+		pinMode(ZONE1, OUTPUT);
+		pinMode(ZONE2, OUTPUT);
+		pinMode(ZONE3, OUTPUT);
+		pinMode(ZONE4, OUTPUT);
 
-	emptyZoneControl.zone = 0;
-	emptyZoneControl.duration = 0;
-	emptyZoneControl.startTime = 0;
-	emptyZoneControl.endTime = 0;
+	  ptrZonesToControl = new ZoneControl[MAXZONESTOCONTROLL];
 
-	for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
-		ptrZonesToControl[i] = emptyZoneControl;
-	}
+		emptyZoneControl.zone = 0;
+		emptyZoneControl.duration = 0;
+		emptyZoneControl.startTime = 0;
+		emptyZoneControl.endTime = 0;
 
-  zoneOverride.overridePin = OVERRIDE;
-  zoneOverride.lastRead = 0;
-  zoneOverride.readInterval = 1000;
+		for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+				ptrZonesToControl[i] = emptyZoneControl;
+		}
 
-	resetZone();
+	  zoneOverride.overridePin = OVERRIDE;
+		zoneOverride.isLow = false;
+	  zoneOverride.readInterval = 1000;
+
+		resetZone();
 }
 //Get the corresponding zone pin
 uint8_t getZonePin(uint16_t zone){
-  switch (zone) {
-		case 1:
-			return ZONE1;
-		case 2:
-			return ZONE2;
-		case 3:
-			return ZONE3;
-		case 4:
-			return ZONE4;
-		default:
-			return 0;
-	}
+	  switch (zone) {
+				case 1:
+					return ZONE1;
+				case 2:
+					return ZONE2;
+				case 3:
+					return ZONE3;
+				case 4:
+					return ZONE4;
+				default:
+					return 0;
+		}
 }
 //check to see if zone is being controlled
 bool isZoneBeingControlled(uint8_t zone){
-  bool isZoneBeingControlled = false;
+	  bool isZoneBeingControlled = false;
 
-  for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
-    if (ptrZonesToControl[i].zone == zone) {
-      isZoneBeingControlled = true;
-      break;
-    }
-  }
+	  for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
+		    if (ptrZonesToControl[i].zone == zone) {
+			      isZoneBeingControlled = true;
+			      break;
+		    }
+	  }
 
-  return isZoneBeingControlled;
+	  return isZoneBeingControlled;
 }
-//write to SPIFFS
-void saveToSpiffs(){
-
+//Send the zone status
+void sendZoneStatus(ZoneControl *zoneToControl, String eventName){
+		String statusUpdate = "{";
+				statusUpdate += "event:'" + eventName + "',";
+				statusUpdate += "zone:" + zoneToControl->zone + ',';
+				statusUpdate += "duration: " + zoneToControl->duration + ',';
+				statusUpdate += "startTime:" + zoneToControl->startTime + ',';
+				statusUpdate += "expectedEndTime:" + zoneToControl->endTime;
+		statusUpdate += "}";
+		zoneNode.setProperty("status").send(statusUpdate);
 }
 
 //Zone control Functions
 //Turn a particular zone on
-void ZoneOn(ZoneControl *zoneToControl) {
-	digitalWrite(zoneToControl->zone, HIGH);
+void zoneOn(ZoneControl *zoneToControl) {
+		digitalWrite(zoneToControl->zone, HIGH);
+
+		sendZoneStatus(zoneToControl, "zoneOn");
 }
 //Turn a particular zone off
-void ZoneOff(ZoneControl *zoneToControl) {
-	digitalWrite(zoneToControl->zone, LOW);
+void zoneOff(ZoneControl *zoneToControl) {
+		digitalWrite(zoneToControl->zone, LOW);
 
-  *zoneToControl = emptyZoneControl;
+		sendZoneStatus(zoneToControl, "zoneOff");
+
+	  *zoneToControl = emptyZoneControl;
 }
 //Turn all zones off
-void AllZonesOff(){
-  for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
-		if (ptrZonesToControl[i].zone != 0) {
-      ZoneOff(&ptrZonesToControl[i]);
-    }
-	}
+void allZonesOff(){
+		String statusUpdate = "{";
+				statusUpdate += "event:'allZonesOff'";
+		statusUpdate += "}";
+		zoneNode.setProperty("status").send(statusUpdate);
+
+	  for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+				if (ptrZonesToControl[i].zone != 0) {
+		      	zoneOff(&ptrZonesToControl[i]);
+		    }
+		}
 }
 
 //Handlers
 //Adds zone onto list to run for x amount of time or all the time
-bool ZoneOnHandler(const HomieRange& range, const String& value) {
-	uint8_t zone = getZonePin(range.index);
+bool zoneOnHandler(const HomieRange& range, const String& value) {
+		uint8_t zone = getZonePin(range.index);
+		
+		ZoneControl zoneToControl;
+				zoneToControl.zone = zone;
+				zoneToControl.duration = value.toInt();
+				zoneToControl.startTime = 0;
+				zoneToControl.endTime = 0;
 
-	ZoneControl zoneToControl;
-		zoneToControl.zone = zone;
-		zoneToControl.duration = value.toInt();
-		zoneToControl.startTime = 0;
-		zoneToControl.endTime = 0;
+	  bool zoneUnderControlled = isZoneBeingControlled(zone);
 
-  bool zoneUnderControlled = isZoneBeingControlled(zone);
+	  if(!zoneUnderControlled){
+		  	for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
+			  		if (ptrZonesToControl[i].zone == 0) {
+				  			ptrZonesToControl[i] = zoneToControl;
+				  			break;
+			  		}
+		  	}
+	  }
 
-  if(!zoneUnderControlled){
-  	for (uint8_t i = 0; i < MAXZONESTOCONTROLL; i++) {
-  		if (ptrZonesToControl[i].zone == 0) {
-  			ptrZonesToControl[i] = zoneToControl;
-  			break;
-  		}
-  	}
-  }
-	return !zoneUnderControlled;
+		return !zoneUnderControlled;
 }
 //Deals with off commands, sets the end time to the current amount of millis
-bool ZoneOffHandler(const HomieRange& range, const String& value) {
+bool zoneOffHandler(const HomieRange& range, const String& value) {
     uint8_t zone = getZonePin(range.index);
+
     bool zoneUnderControlled = isZoneBeingControlled(zone);
+
     if (zoneUnderControlled){
         for(int i=0; i < MAXZONESTOCONTROLL; i++){
             if(ptrZonesToControl[i].zone == zone){
@@ -144,50 +174,59 @@ bool ZoneOffHandler(const HomieRange& range, const String& value) {
             }
         }
     }
+
     return zoneUnderControlled;
 }
 //handler for the loop item
 void loopHandler() {
-	uint32_t currentMillis = millis();
+		uint32_t currentMillis = millis();
 
-  if(zoneOverride.lastRead + zoneOverride.readInterval < currentMillis){
-		zoneOverride.lastRead = currentMillis;
+		//Check to see if override has been triggered
 		int readOverride = digitalRead(zoneOverride.overridePin);
-		Serial << "Override value: " << readOverride << endl;
-    if(readOverride == HIGH){
-      AllZonesOff();
-    }
-  }
-	for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
-		if (ptrZonesToControl[i].zone != 0) {
-			if (ptrZonesToControl[i].endTime == 0) {
-				if (ptrZonesToControl[i].startTime == 0) {
-					ptrZonesToControl[i].startTime = currentMillis;
-					ZoneOn(&ptrZonesToControl[i]);
-				}
-				ptrZonesToControl[i].endTime = ptrZonesToControl[i].startTime + ptrZonesToControl[i].duration;
-			}
-      else if(ptrZonesToControl[i].startTime != ptrZonesToControl[i].endTime && currentMillis > ptrZonesToControl[i].endTime){
-          ZoneOff(&ptrZonesToControl[i]);
-      }
+
+		if(readOverride == LOW && !zoneOverride.isLow){
+				zoneOverride.isLow = true;
+				zoneOverride.lastLowReadTime = currentMillis;
+		}else if(readOverride == HIGH && zoneOverride.isLow){
+				zoneOverride.isLow = false;
 		}
-	}
+
+	  if(zoneOverride.lastLowReadTime + zoneOverride.readInterval < currentMillis && zoneOverride.isLow){
+				zoneOverride.isLow = false;
+      	allZonesOff();
+	  }
+
+		//loop to control the zones
+		for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
+				if (ptrZonesToControl[i].zone != 0) {
+						if (ptrZonesToControl[i].endTime == 0) {
+								if (ptrZonesToControl[i].startTime == 0) {
+										ptrZonesToControl[i].startTime = currentMillis;
+										zoneOn(&ptrZonesToControl[i]);
+								}
+								ptrZonesToControl[i].endTime = ptrZonesToControl[i].startTime + ptrZonesToControl[i].duration;
+						}
+			      else if(ptrZonesToControl[i].startTime != ptrZonesToControl[i].endTime && currentMillis > ptrZonesToControl[i].endTime){
+			          zoneOff(&ptrZonesToControl[i]);
+			      }
+				}
+		}
 }
 
 void setup() {
-	Serial.begin(115200);
-	Serial << endl << endl;
+		Serial.begin(115200);
+		Serial << endl << endl;
 
-	Homie_setFirmware("plantnanny-controller", "0.0.9");
-	Homie_setBrand("plantnanny")
+		Homie_setFirmware("plantnanny-controller", "1.0.0");
+		Homie_setBrand("plantnanny")
 
-	Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
+		Homie.setSetupFunction(setupHandler).setLoopFunction(loopHandler);
 
-	// devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
-	zoneNode.advertiseRange("on", 1, 4).settable(ZoneOnHandler);
-	zoneNode.advertiseRange("off", 1, 4).settable(ZoneOffHandler);
+		// devices/c40f46e0/zone/on_3/set - for sending to 3rd relay
+		zoneNode.advertiseRange("on", 1, 4).settable(zoneOnHandler);
+		zoneNode.advertiseRange("off", 1, 4).settable(zoneOffHandler);
 
-	Homie.setup();
+		Homie.setup();
 }
 
 void loop() {
