@@ -124,23 +124,27 @@ void zoneOff(ZoneControl *zoneToControl) {
 }
 //Turn all zones off
 void allZonesOff(){
-		String statusUpdate = "{";
-				statusUpdate += "event:'allZonesOff'";
-		statusUpdate += "}";
-		zoneNode.setProperty("status").send(statusUpdate);
-
 	  for (int i = 0; i < MAXZONESTOCONTROLL; i++) {
 				if (ptrZonesToControl[i].zone != 0) {
 		      	zoneOff(&ptrZonesToControl[i]);
 		    }
 		}
 }
+//Override triggered
+void overrideTriggered(){
+		String statusUpdate = "{";
+				statusUpdate += "event:'overrideTriggered'";
+		statusUpdate += "}";
+		zoneNode.setProperty("status").send(statusUpdate);
+
+		allZonesOff();
+}
 
 //Handlers
 //Adds zone onto list to run for x amount of time or all the time
 bool zoneOnHandler(const HomieRange& range, const String& value) {
 		uint8_t zone = getZonePin(range.index);
-		
+
 		ZoneControl zoneToControl;
 				zoneToControl.zone = zone;
 				zoneToControl.duration = value.toInt();
@@ -193,7 +197,7 @@ void loopHandler() {
 
 	  if(zoneOverride.lastLowReadTime + zoneOverride.readInterval < currentMillis && zoneOverride.isLow){
 				zoneOverride.isLow = false;
-      	allZonesOff();
+      	overrideTriggered();
 	  }
 
 		//loop to control the zones
